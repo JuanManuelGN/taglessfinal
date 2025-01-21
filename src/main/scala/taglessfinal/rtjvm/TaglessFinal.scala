@@ -5,6 +5,12 @@ import taglessfinal.rtjvm.TaglessFinal.ExpressionProblem.aBoolean
 object TaglessFinal {
 
   // Expression problem
+
+  /**
+   * A continuación escribimos un programa que sea capaz de evaluar expresion lógicas.
+   * Para ello construimos cada expresión con una case class y a continuación implementamos
+   * un método eval que dada una expresión algebraica calcule su resultado
+   */
   object ExpressionProblem {
     trait Expr
     case class B(boolean: Boolean) extends Expr
@@ -19,11 +25,20 @@ object TaglessFinal {
       case Or(l, r) => eval(l) || eval(r)
       case And(l, r) => eval(l) && eval(r)
       case Not(e) => !eval(e)
-      
+    
     // Include Ints
+
+    /**
+     * Ahora decidimos aumentar las capacidades de cómputo de nuestro programa y añadimos la suma
+     * de número enteros
+     */
     case class I(int: Int) extends Expr
     case class Sum(l: Expr, r: Expr) extends Expr
-    
+
+    /**
+     * Como podemos ver no nos sirve el método arriba definido y debemos reimplementarlo de la
+     * siguiente forma. Por lo que nuestro código no es reutilizable ni ampliable
+     */
     def eval2(expr: Expr): Boolean | Int = expr match
       case B(b) => b
       case Or(l, r) => eval(l).asInstanceOf[Boolean] || eval(r).asInstanceOf[Boolean]
@@ -31,12 +46,21 @@ object TaglessFinal {
       case Not(e) => !eval(e).asInstanceOf[Boolean]
       // cats everywhere
   }
-  
+
+  /**
+   * Una primera solución es añadir tags. Se hace una comprobación de tipos mediante
+   * una etiqueta, pero esto no es una solución que nos aporte seguridad en tiempo de
+   * ejecución.
+   */
   object Solution1_Tagging {
     trait Expr(val tag: String)
 
     case class B(boolean: Boolean) extends Expr("bool")
     case class Or(l: Expr, r: Expr) extends Expr("bool")
+
+    /**
+     * Con el método assert le decimos al constructor que solo acepte determinados tags
+     */
     case class And(l: Expr, r: Expr) extends Expr("bool") {
       assert(l.tag == "bool" && r.tag == "bool")
     }
@@ -53,12 +77,23 @@ object TaglessFinal {
         else
           eval(l).asInstanceOf[Boolean] || eval(r).asInstanceOf[Boolean]
       // same for the rest
+      case And(l, r) => eval(l) && eval(r) // aquí no es necesario lanzar la exception porque en el constructor estamos limitando los tags aceptados
     
     /*
     * Esta solución no es tal, ya que en runtime puede seguir fallando igualmente
     * */
   }
-  
+
+  /**
+   * La solución al problema de las etiquedas es Tagless.
+   * Dado que las etiquetas en la solución anterior esencialmente agregaron
+   * información de tipo al tiempo de ejecución, podemos eliminar las etiquetas
+   * y dejar que el compilador realice la verificación de tipo automáticamente.
+   * 
+   * Esta es una solución sin etiquetas , porque hemos eliminado las etiquetas.
+   * Se llama tagless initial , porque trabajamos con estructuras de datos
+   * intermedias, no con los valores que nos interesan. Eso sería tagless final
+   */
   object Solution2_Tagless {
     trait Expr[A]
     
@@ -84,10 +119,22 @@ object TaglessFinal {
     println(s" eval of Or(B(true), And(B(true)), B(false)) is ${eval(Or(B(true), And(B(true), B(false))))}")
     println(s" eval of Sum(I(23), I(8)) is ${eval(Sum(I(23), I(8)))}")
   }
-  
+
+  /**
+   * Hay otro paso que podemos dar. No solo podemos eliminar las etiquetas,
+   * sino que también podemos representar inmediatamente estas expresiones
+   * en términos del valor evaluado que nos interesa (el valor final).
+   * Esto es final sin etiquetas .
+   * 
+   * Expr[A] tiene el valor evaluado directamente en la instancia, como miembro.
+   * Cada construcción de otra Exprdel tipo correcto ya tiene el valor final
+   * incorporado allí. Por lo tanto, nuestra función de evaluación está casi vacía,
+   * porque unicamente lo que necesitamos hacer es devolver el valor incorporado
+   * en la expresión que se pasa como argumento.
+   */
   object TaglessFinal {
     trait Expr[A] {
-      val value: A
+      val value: A // final value
     }
     
     def b(boolean: Boolean): Expr[Boolean] = new Expr[Boolean] {
@@ -122,6 +169,16 @@ object TaglessFinal {
   }
   
   // Using type classes
+
+  /**
+   * ¿Dónde está F[_]?
+   * Esto son clases de tipos:
+   * Las clases de tipos son conjuntos de funcionalidades que desea ofrecer a algunos tipos y no a otros.
+   * La función tagless final quiere demostrar la corrección de expresiones de algunos tipos y no de otros.
+   * 
+   * Podemos agrupar todas nuestras funcionalidades, es decir, la capacidad de construir expresiones,
+   * operandos y operadores en una única clase de tipo, implementada en términos de un tipo abstracto E:
+   */
   object TaglessFinal2 {
     trait Algebra[E[_]] {
       def b(boolean: Boolean): E[Boolean]
@@ -130,7 +187,10 @@ object TaglessFinal {
       def and(l: E[Boolean], r: E[Boolean]): E[Boolean]
       def sum(l: E[Int], r: E[Int]): E[Int]
     }
-    
+
+    /**
+     * Implementamos un interprete para nuestro trait
+     */
     case class SimpleExpr[A](value: A)
     given simpleAlgebra: Algebra[SimpleExpr] with {
       override def b(boolean:  Boolean): SimpleExpr[Boolean] = SimpleExpr(boolean)
@@ -146,7 +206,10 @@ object TaglessFinal {
       override def sum(l:  SimpleExpr[Int], r:  SimpleExpr[Int]): SimpleExpr[Int] =
         SimpleExpr(l.value + r.value)
     }
-    
+
+    /**
+     * Esto son los programas que usan los interpretes para alcanzar un objetivo
+     */
     def program1[E[_]](using alg: Algebra[E]): E[Boolean] = {
       import alg.*
       or(b(true), and(b(true), b(false)))
